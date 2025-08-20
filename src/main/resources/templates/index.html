@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #content {
+            display: flex;
+            flex-direction: row;
+            box-sizing: border-box;
+            height: 100vh;
+            width: 100%;
+        }
+
+        #content * {
+            box-sizing: border-box;
+        }
+
+        aside {
+            flex: 1;
+            background-color: azure;
+            padding: 10px;
+        }
+
+        main {
+            padding: 10px;
+            display: grid;
+            grid-template-columns: repeat(5, 200px);
+            grid-gap: 10px;
+            grid-auto-rows: min(300px);
+            grid-auto-columns: min(200px);
+            flex: 4;
+        }
+
+        .chat-room {
+            background-color: bisque;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+        }
+
+        .room-name {
+            background-color: antiquewhite;
+            flex: 1;
+        }
+
+        .room-members {
+            background-color: aquamarine;
+            flex: 4;
+        }
+    </style>
+</head>
+<body>
+<div id="content">
+    <aside>
+        <label for="room-input">방이름</label>
+        <input id="room-input" type="text">
+        <button id="btn-create-room">생성</button>
+        <div id="member-list">
+
+        </div>
+    </aside>
+    <main id="chat-room-content">
+        <div class="chat-room" th:each="room : ${rooms}" th:data-room-name="${room.name}"
+             onclick="joinRoom(this.dataset.roomName)">
+            <div th:text="${room.name}" class="room-name"></div>
+            <div class="room-members" th:each="member: ${room.members}">
+                <p th:text="${member}"></p>
+            </div>
+        </div>
+    </main>
+</div>
+</body>
+<script th:inline="javascript" type="module">
+    import {
+        connect,
+        createRoom,
+        disconnect,
+        onMessage, RECEIVE_CREATED_ROOM,
+        RECEIVE_DISCONNECTED,
+        RECEIVE_JOINED_ROOM,
+        RECEIVE_LEAVED_ROOM,
+        RECEIVE_JOINED_LOBBY,
+    } from "/js/chat_module.js";
+
+    const input = document.getElementById("room-input")
+    const createRoomButton = document.getElementById("btn-create-room")
+    const memberList = document.getElementById("member-list");
+    const roomListElement = document.getElementById("chat-room-content")
+
+    const sessionMember = /*[[${session.member}]]*/ null;
+    if (sessionMember == null) {
+        alert('로그인이 필요합니다.')
+        location.replace('http://localhost:8080/login')
+    }
+
+    const joinRoom = (name) => {
+        fetch("http://localhost:8080/join/" + name, {method: "GET", redirect: "follow"})
+            .then(response => {
+                if (response.redirected) {
+                    location.href = response.url
+                }
+            })
+    }
+
+    const updateRoom = () => {
+        fetch("http://localhost:8080/rooms")
+            .then(response => response.json())
+            .then(data => {
+                console.log("roomInfo", data)
+                renderRoomList(data)
+            })
+    }
+
+    const renderRoomList = (data) => {
+        roomListElement.innerText = ""
+        for (let i = 0; i < data.length; i++) {
+            const roomElement = document.createElement("div")
+            const roomNameElement = document.createElement("div")
+            const roomMemberElement = document.createElement("div")
+            const roomInfo = data[i]
+            roomElement.classList.add("chat-room")
+            roomNameElement.innerText = roomInfo.name
+            roomNameElement.classList.add("room-name")
+            roomMemberElement.classList.add("room-members")
+            roomInfo.members.forEach((member) => {
+                const memberElement = document.createElement("p")
+                memberElement.innerText = member
+                roomMemberElement.appendChild(memberElement)
+            })
+            roomElement.appendChild(roomNameElement)
+            roomElement.appendChild(roomMemberElement)
+            roomElement.onclick = () => {
+                joinRoom(roomInfo.name)
+            }
+            roomListElement.appendChild(roomElement)
+        }
+    }
+
+    const getMembers = () => {
+        fetch("http://localhost:8080/members/")
+            .then(response => {
+                return response.json()
+            })
+            .then(data => {
+                renderMemberList(data)
+            })
+    }
+
+    const renderMemberList = (data) => {
+        memberList.innerText = ""
+        for (let i = 0; i < data.length; i++) {
+            const memberName = document.createElement("p")
+            memberName.innerText = data[i]
+            memberList.appendChild(memberName)
+        }
+    }
+
+    createRoomButton.onclick = () => {
+        if (input.value.length > 0) {
+            createRoom(input.value)
+        }
+    }
+
+    window.onpageshow = () => {
+        connect(() => {
+            onMessage((message) => {
+                switch (message.cmd) {
+                    case RECEIVE_CREATED_ROOM:
+                        updateRoom();
+                        break
+                    case RECEIVE_JOINED_ROOM:
+                    case RECEIVE_LEAVED_ROOM:
+                    case RECEIVE_DISCONNECTED:
+                    case RECEIVE_JOINED_LOBBY:
+                        updateRoom();
+                        getMembers();
+                        break
+                    default:
+                }
+            })
+            getMembers();
+        })
+
+    }
+    window.onpagehide = () => {
+        setTimeout(() => {
+            disconnect()
+        }, 0)
+    }
+</script>
+</html>
